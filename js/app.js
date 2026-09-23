@@ -300,12 +300,13 @@
       var c = cells[idx];
       c.className = r.s === worst ? "worst" : "";
       c.innerHTML = "";
-      c.appendChild(el("div", null, "QT = " + r.qt + " yr, T = " + r.t.toFixed(2)));
+      c.appendChild(el("div", null, "QT = " + r.qt + " yr"));
       var line = el("div");
       line.appendChild(el("span", { "class": "s" }, r.s.toFixed(1)));
       line.appendChild(document.createTextNode(" " + band(r.s)));
       c.appendChild(line);
-      if (r.s === worst) c.appendChild(el("div", null, "Worst case"));
+      c.appendChild(el("div", { "class": "strip-t" }, "T = " + r.t.toFixed(2)));
+      if (r.s === worst) c.appendChild(el("div", { "class": "strip-worst" }, "Worst case"));
     });
 
     // Results panel
@@ -315,6 +316,12 @@
     setText("dep-score", sDep.toFixed(1));
     setText("harv-score", sHarv.toFixed(1));
     setText("t-score", tmp.t.toFixed(2));
+    setText("mini-hndl", sHndl.toFixed(1));
+    setText("mini-band", bandName);
+    setText("mini-dep", sDep.toFixed(1));
+    setText("mini-harv", sHarv.toFixed(1));
+    setText("mini-t", tmp.t.toFixed(2));
+    document.getElementById("mini").className = "mini band-" + bandName.toLowerCase();
 
     var depVec = vectorString(state.dep);
     var harvVec = vectorString(state.harv);
