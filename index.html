@@ -12,23 +12,19 @@
 <header class="intro">
   <h1>HNDL-adjusted CVSS v4.0 calculator</h1>
   <p>Scores a TLS endpoint under an ordinary CVSS v4.0 threat model and a Harvest-Now-Decrypt-Later threat model, and combines the two.</p>
-  <p class="method"><strong>Method.</strong> Both vectors are scored with FIRST's official CVSS v4.0 algorithm and lookup tables, unmodified.
-    One documented transformation is added on top: a temporal factor <var>T</var>, derived from Mosca's inequality, scales the harvest score, and
-    <var>S</var><sub>HNDL</sub> = max(<var>S</var><sub>dep</sub>, <var>T</var> &times; <var>S</var><sub>harv</sub>).</p>
-</header>
+  </header>
 
 <div class="layout">
 <main>
 
   <section id="sec-dep">
-    <h2 class="bar">A. Deprecation vector &mdash; <var>S</var><sub>dep</sub></h2>
-    <p class="hint">Padding-oracle-class attack against deprecated TLS (1.0, 1.1, 1.2 with CBC).</p>
+    <h2 class="bar">A. Deprecation vector : <var>S</var><sub>dep</sub></h2>
     <div id="dep-base"></div>
     <div id="dep-extra"></div>
   </section>
 
   <section id="sec-harv">
-    <h2 class="bar">B. Harvest vector &mdash; <var>S</var><sub>harv</sub></h2>
+    <h2 class="bar">B. Harvest vector : <var>S</var><sub>harv</sub></h2>
     <p class="hint">Passive collection now, retrospective decryption once a quantum computer is available.</p>
     <div id="harv-base"></div>
   </section>
@@ -50,15 +46,6 @@
     <h3 class="subbar">Sensitivity to the quantum horizon</h3>
     <div class="strip" id="strip"></div>
     <p class="hint">QT is an assumption, not a measurement: record the worst case of the three.</p>
-  </section>
-
-  <section id="limits">
-    <h2 class="bar">Limitations</h2>
-    <ul>
-      <li>The quantum horizon QT is a contested assumption; informed estimates differ by more than a decade.</li>
-      <li>The linear form of <var>T</var> is a design choice for interpretability, not an empirically calibrated model.</li>
-      <li>The max() composition deliberately does not model compounding: both scores describe the same endpoint under two threat models.</li>
-    </ul>
   </section>
 
 </main>
