@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HNDL-adjusted CVSS v4.0 calculator</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>HNDL-adjusted CVSS v4.0 calculator</h1>
+  <p>Scores a TLS endpoint under an ordinary CVSS v4.0 threat model and a Harvest-Now-Decrypt-Later threat model, and combines the two.</p>
+  <p class="method"><strong>Method.</strong> Both vectors are scored with FIRST's official CVSS v4.0 algorithm and lookup tables, unmodified.
+    One documented transformation is added on top: a temporal factor <var>T</var>, derived from Mosca's inequality, scales the harvest score, and
+    <var>S</var><sub>HNDL</sub> = max(<var>S</var><sub>dep</sub>, <var>T</var> &times; <var>S</var><sub>harv</sub>).</p>
+</header>
+
+<div class="layout">
+<main>
+
+  <section id="sec-dep">
+    <h2 class="bar">A. Deprecation vector &mdash; <var>S</var><sub>dep</sub></h2>
+    <p class="hint">Padding-oracle-class attack against deprecated TLS (1.0, 1.1, 1.2 with CBC).</p>
+    <div id="dep-base"></div>
+    <div id="dep-extra"></div>
+  </section>
+
+  <section id="sec-harv">
+    <h2 class="bar">B. Harvest vector &mdash; <var>S</var><sub>harv</sub></h2>
+    <p class="hint">Passive collection now, retrospective decryption once a quantum computer is available.</p>
+    <div id="harv-base"></div>
+  </section>
+
+  <section id="sec-temporal">
+    <h2 class="bar">C. Temporal exposure &mdash; <var>T</var></h2>
+    <div class="years">
+      <label><span>Confidentiality lifetime <abbr title="How long the data must remain secret">DL</abbr> (years)</span>
+        <input type="number" id="dl" min="0" step="any"></label>
+      <label><span>Migration time <abbr title="Time to deploy hybrid or post-quantum key exchange">MT</abbr> (years)</span>
+        <input type="number" id="mt" min="0" step="any"></label>
+      <label><span>Quantum horizon <abbr title="Years until a cryptanalytically relevant quantum computer is assumed available">QT</abbr> (years)</span>
+        <input type="number" id="qt" min="0" step="any"></label>
+    </div>
+    <p class="formula"><var>G</var> = DL + MT &minus; QT = <strong id="g-out"></strong>
+      &nbsp;&nbsp; <var>T</var> = <span id="t-rule"></span> = <strong id="t-out"></strong></p>
+    <p class="verdict" id="verdict"></p>
+
+    <h3 class="subbar">Sensitivity to the quantum horizon</h3>
+    <div class="strip" id="strip"></div>
+    <p class="hint">QT is an assumption, not a measurement: record the worst case of the three.</p>
+  </section>
+
+  <section id="limits">
+    <h2 class="bar">Limitations</h2>
+    <ul>
+      <li>The quantum horizon QT is a contested assumption; informed estimates differ by more than a decade.</li>
+      <li>The linear form of <var>T</var> is a design choice for interpretability, not an empirically calibrated model.</li>
+      <li>The max() composition deliberately does not model compounding: both scores describe the same endpoint under two threat models.</li>
+    </ul>
+  </section>
+
+</main>
+
+<aside class="results" id="results">
+  <h2 class="bar">Result</h2>
+  <div class="headline" id="headline">
+    <div class="headline-label"><var>S</var><sub>HNDL</sub></div>
+    <div class="headline-score"><span id="hndl-score"></span> <span id="hndl-band"></span></div>
+  </div>
+  <div class="figures">
+    <div><span class="fig-label"><var>S</var><sub>dep</sub></span><span class="fig" id="dep-score"></span></div>
+    <div><span class="fig-label"><var>S</var><sub>harv</sub></span><span class="fig" id="harv-score"></span></div>
+    <div><span class="fig-label"><var>T</var></span><span class="fig" id="t-score"></span></div>
+  </div>
+
+  <div class="out">
+    <div class="out-head">Deprecation vector <a id="dep-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
+    <code id="dep-vector"></code>
+    <button type="button" class="copy" data-copy="dep-vector">Copy</button>
+  </div>
+  <div class="out">
+    <div class="out-head">Harvest vector <a id="harv-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
+    <code id="harv-vector"></code>
+    <button type="button" class="copy" data-copy="harv-vector">Copy</button>
+  </div>
+  <div class="out">
+    <div class="out-head">HNDL extension</div>
+    <code id="ext-string"></code>
+    <button type="button" class="copy" data-copy="ext-string">Copy</button>
+  </div>
+  <button type="button" class="copy full" id="copy-record">Copy full record</button>
+  <p class="hint">The page URL holds the full assessment and can be shared as a link.</p>
+</aside>
+</div>
+
+<footer>
+  CVSS v4.0 scoring: official FIRST implementation (FIRST.ORG, Red Hat and contributors, BSD-2-Clause), vendored in <code>js/cvss-v4/</code>.
+</footer>
+
+</div>
+
+<script src="js/cvss-v4/metrics.js"></script>
+<script src="js/cvss-v4/cvss_config.js"></script>
+<script src="js/cvss-v4/cvss_lookup.js"></script>
+<script src="js/cvss-v4/max_composed.js"></script>
+<script src="js/cvss-v4/max_severity.js"></script>
+<script src="js/cvss-v4/cvss_score.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
