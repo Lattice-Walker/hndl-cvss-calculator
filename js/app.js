@@ -30,6 +30,7 @@
     SC: "Raise to High where harvested sessions carry credentials, long-lived tokens or key material."
   };
   var E_NOTE = "The absence of a present-day quantum decryption capability is the premise of the threat, not a mitigation of it.";
+  var E_LOCKED_TIP = "E:X \u2014 held at Not Defined on this vector, which CVSS v4.0 scores as Attacked. Lowering it would treat the absence of a quantum computer as a mitigation, when it is the premise of the whole threat. Example: setting Unreported here would score a harvest that nobody can decrypt yet as though it were harmless.";
 
   var DEP_NOTES = {
     E: "Not Defined is not neutral: CVSS v4.0 scores E:X exactly as E:A (Attacked). The harvest vector has no equivalent control, so lowering this here widens the gap between the two scores."
@@ -52,23 +53,55 @@
   // index is a more severe value.
 
   var HARV_PINNED = {
-    AC: { value: "L", why: "Fixed at Low on this vector. Copying ciphertext off a tap involves no evasion and no preparation, so Attack Complexity High would be describing the active attack on panel A, not this one." },
-    PR: { value: "N", why: "Fixed at None on this vector. Collecting traffic in transit requires no privileges on the endpoint." },
-    UI: { value: "N", why: "Fixed at None on this vector. Passive collection requires no action from any victim." },
-    VI: { value: "N", why: "Fixed at None on this vector. Harvesting is passive and the decryption is retrospective, so a session that has already happened cannot be modified. Integrity consequences of decrypted material belong in the Subsequent System metrics." },
-    VA: { value: "N", why: "Fixed at None on this vector. A passive, retrospective attack denies nothing." }
+    AC: {
+      value: "L",
+      why: "Fixed at Low on this vector. Copying ciphertext off a tap involves no evasion and no preparation, so Attack Complexity High would be describing the active attack on panel A, not this one.",
+      ex: "mirroring a switch port and writing the capture to disk works the first time and every time."
+    },
+    PR: {
+      value: "N",
+      why: "Fixed at None on this vector. Collecting traffic in transit requires no privileges on the endpoint.",
+      ex: "a tap upstream of the load balancer never authenticates to anything."
+    },
+    UI: {
+      value: "N",
+      why: "Fixed at None on this vector. Passive collection requires no action from any victim.",
+      ex: "the capture runs whether or not anyone uses the service that day."
+    },
+    VI: {
+      value: "N",
+      why: "Fixed at None on this vector. Harvesting is passive and the decryption is retrospective, so a session that has already happened cannot be modified. Integrity consequences of decrypted material belong in the Subsequent System metrics.",
+      ex: "reading a 2026 session in 2038 does not alter a byte of it."
+    },
+    VA: {
+      value: "N",
+      why: "Fixed at None on this vector. A passive, retrospective attack denies nothing.",
+      ex: "throughput and error rates are unchanged while the capture runs."
+    }
   };
 
   var HARV_AT_LEAST = {
-    AV: "Both attacks read the same channel, so the harvest vector cannot require a less accessible position than the deprecation vector.",
-    AT: "The harvest attack needs no conditions beyond the ones the active attack already needs.",
-    VC: "Retrospective decryption yields the entire plaintext of the same sessions, so it cannot disclose less than the active attack extracts from them.",
-    SC: "Retrospective decryption discloses a superset of what the active attack extracts, so its subsequent impact cannot be lower."
+    AV: {
+      why: "Both attacks read the same channel, so the harvest vector cannot require a less accessible position than the deprecation vector.",
+      ex: "if the active attacker reaches the endpoint from the internet, a collector on the same path reaches the ciphertext too."
+    },
+    AT: {
+      why: "The harvest attack needs no conditions beyond the ones the active attack already needs.",
+      ex: "if the oracle fires on any connection, the collector needs no extra condition either."
+    },
+    VC: {
+      why: "Retrospective decryption yields the entire plaintext of the same sessions, so it cannot disclose less than the active attack extracts from them.",
+      ex: "an oracle recovering one cookie over hours cannot beat a capture that decrypts the whole session at once."
+    },
+    SC: {
+      why: "Retrospective decryption discloses a superset of what the active attack extracts, so its subsequent impact cannot be lower.",
+      ex: "if the recovered cookie opens an admin console, the full decryption opens it as well."
+    }
   };
 
-  var CR_X_WHY = "Not Defined is scored exactly as High here: CVSS v4.0 maps CR:X to CR:H. Choosing it would record a value the score does not reflect, so state the requirement explicitly.";
-  var SAFETY_WHY_MS = "Supplemental Safety is set to Negligible (S:N). A Safety-rated subsequent impact contradicts that. Change Safety first.";
-  var SAFETY_WHY_S = "Modified Subsequent Integrity or Availability is set to Safety (S). Declaring safety impact Negligible contradicts that.";
+  var CR_X_WHY = "Not Defined is scored exactly as High here, because CVSS v4.0 maps CR:X to CR:H. Choosing it would record a value the score does not reflect, so state the requirement explicitly. Example: leaving it Not Defined on low-sensitivity telemetry still scores it as though decades of secrecy were required.";
+  var SAFETY_WHY_MS = "Supplemental Safety is set to Negligible, and a Safety-rated subsequent impact contradicts that. Change Safety first. Example: a marketing site assessed as harming nobody physically cannot also have an integrity failure that endangers someone.";
+  var SAFETY_WHY_S = "Modified Subsequent Integrity or Availability is set to Safety, and declaring safety impact Negligible contradicts that. Example: an endpoint fronting a door controller cannot be marked as having no physical consequence.";
 
   // Deprecation-vector metrics with no counterpart on the harvest vector.
   var DEP_ONLY = ["E", "CR", "IR", "AR", "MAV", "MAC", "MAT", "MPR", "MUI",
@@ -167,19 +200,19 @@
   function blockReason(which, key, value) {
     if (which === "harv") {
       var pin = HARV_PINNED[key];
-      if (pin && value !== pin.value) return pin.why;
+      if (pin && value !== pin.value) return pin.why + " Example: " + pin.ex;
       if (key === "CR" && value === "X") return CR_X_WHY;
     }
 
-    var why = HARV_AT_LEAST[key];
-    if (why) {
+    var rule = HARV_AT_LEAST[key];
+    if (rule) {
       if (which === "harv" && rank(key, value) > rank(key, state.dep[key])) {
-        return why + " The deprecation vector is set to " + key + ":" + state.dep[key] +
-          ", which this would fall below.";
+        return rule.why + " The deprecation vector is set to " + key + ":" + state.dep[key] +
+          ", which this would fall below. Example: " + rule.ex;
       }
       if (which === "dep" && rank(key, value) < rank(key, state.harv[key])) {
-        return why + " The harvest vector is set to " + key + ":" + state.harv[key] +
-          ", which this would exceed. Raise the harvest vector first.";
+        return rule.why + " The harvest vector is set to " + key + ":" + state.harv[key] +
+          ", which this would exceed, so raise the harvest vector first. Example: " + rule.ex;
       }
     }
 
@@ -259,6 +292,37 @@
 
   // ---- Rendering ----------------------------------------------------------
 
+  // Labels are shown without their metric code ("Attack Vector (AV)" reads
+  // "Attack Vector"); the code is carried in the hover text instead, so the
+  // mapping to the vector string is never lost.
+  function stripCode(label) {
+    return String(label).replace(/\s*\([^)]*\)\s*$/, "");
+  }
+
+  function helpEntry(which, key) {
+    return (window.HELP && HELP[which] && HELP[which][key]) || null;
+  }
+
+  function metricHelp(which, key, fallback) {
+    var h = helpEntry(which, key);
+    return key + " \u2014 " + ((h && h.text) || fallback || "");
+  }
+
+  function optionHelp(which, key, value, fallback) {
+    var h = helpEntry(which, key);
+    return key + ":" + value + " \u2014 " + ((h && h.options[value]) || fallback || "");
+  }
+
+  var GROUP_HELP = {
+    "Exploitability Metrics": "How hard the attack is to mount: where the attacker must be, what they must defeat, and what must already be true. Example: a flaw reachable from the internet with no privileges scores highest here.",
+    "Vulnerable System Impact Metrics": "What the attack does to this endpoint itself. Example: recovering the plaintext of its sessions is a confidentiality impact on the vulnerable system.",
+    "Subsequent System Impact Metrics": "What the attack does to other systems as a consequence. Example: a credential recovered from this endpoint that opens an internal admin console.",
+    "Environmental and Threat": "Adjustments for your own deployment and for real-world exploitation. Example: raising the confidentiality requirement where the traffic carries clinical data.",
+    "Supplemental Metrics": "Context recorded alongside the score. None of these metrics enters the calculation, by CVSS v4.0 design. Example: marking a flaw Irrecoverable documents it without changing S_dep.",
+    "Environmental Metrics": "Your deployment's own view, overriding the supplier's base values and weighting the impacts by what the data is worth. Example: an endpoint the supplier calls internet-facing that you expose only on a management VLAN.",
+    "Threat Metrics": "How far real-world exploitation has actually got. Example: lowering Exploit Maturity for a flaw with no published exploit."
+  };
+
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -271,18 +335,22 @@
   // options: [{label, value, tooltip}]
   function metricRow(which, key, label, tooltip, options, note) {
     var row = el("div", { "class": "metric" });
-    row.appendChild(el("div", { "class": "metric-label", title: tooltip || "" }, label + ":"));
+    row.appendChild(el("div", {
+      "class": "metric-label tip",
+      title: metricHelp(which, key, tooltip)
+    }, stripCode(label) + ":"));
     var opts = el("div", { "class": "options" });
     options.forEach(function (o) {
+      var help = optionHelp(which, key, o.value, o.tooltip);
       var b = el("button", {
         type: "button",
         "data-which": which,
         "data-key": key,
         "data-value": o.value,
-        "data-tip": o.tooltip || "",
-        title: o.tooltip || "",
+        "data-tip": help,
+        title: help,
         "aria-pressed": "false"
-      }, o.label);
+      }, stripCode(o.label));
       opts.appendChild(b);
     });
     row.appendChild(opts);
@@ -299,6 +367,10 @@
     return Object.keys(metricData.options).map(function (label) {
       var o = metricData.options[label];
       return { label: label, value: o.value, tooltip: o.tooltip };
+    }).filter(function (o) {
+      // cvss_config.js contains one malformed entry (an empty option under
+      // MSC). Rendering it would give a valueless button that scores NaN.
+      return o.value && ORDER[metricData.short].indexOf(o.value) >= 0;
     });
   }
 
@@ -306,7 +378,10 @@
   function renderConfigSection(container, which, sectionName, notes) {
     var groups = cvssConfig[sectionName].metric_groups;
     Object.keys(groups).forEach(function (groupName) {
-      if (groupName) container.appendChild(el("div", { "class": "group-title" }, groupName));
+      if (groupName) {
+        container.appendChild(el("div",
+          { "class": "group-title tip", title: GROUP_HELP[groupName] || "" }, groupName));
+      }
       var metrics = groups[groupName];
       Object.keys(metrics).forEach(function (label) {
         var m = metrics[label];
@@ -324,7 +399,7 @@
 
   function details(title, sections, which, notes, lead) {
     var d = el("details");
-    d.appendChild(el("summary", null, title));
+    d.appendChild(el("summary", { "class": "tip", title: GROUP_HELP[title] || "" }, title));
     var inner = el("div");
     if (lead) inner.appendChild(sectionNote("Note:", lead));
     sections.forEach(function (s) { renderConfigSection(inner, which, s, notes); });
@@ -343,7 +418,9 @@
     var harv = document.getElementById("harv-base");
     renderConfigSection(harv, "harv", "Base Metrics", HARV_NOTES);
 
-    harv.appendChild(el("div", { "class": "group-title" }, "Environmental and Threat"));
+    harv.appendChild(el("div",
+      { "class": "group-title tip", title: GROUP_HELP["Environmental and Threat"] },
+      "Environmental and Threat"));
     var cr = cvssConfig["Environmental (Security Requirements)"].metric_groups[""]["Confidentiality Requirements (CR)"];
     var crOpts = configOptions(cr);
     var crOrder = ["X", "L", "M", "H"];
@@ -351,8 +428,11 @@
     harv.appendChild(metricRow("harv", "CR", "Confidentiality Requirements (CR)", cr.tooltip, crOpts));
 
     var eRow = el("div", { "class": "metric" });
-    eRow.appendChild(el("div", { "class": "metric-label" }, "Exploit Maturity (E):"));
-    eRow.appendChild(el("div", { "class": "locked" }, "Not Defined (X)"));
+    eRow.appendChild(el("div", {
+      "class": "metric-label tip",
+      title: metricHelp("dep", "E")
+    }, "Exploit Maturity:"));
+    eRow.appendChild(el("div", { "class": "locked tip", title: E_LOCKED_TIP }, "Not Defined"));
     var eNote = el("div", { "class": "note" });
     eNote.appendChild(el("b", null, "Locked: "));
     eNote.appendChild(document.createTextNode(E_NOTE));
@@ -476,7 +556,11 @@
     var worst = Math.max.apply(null, results.map(function (r) { return r.s; }));
     results.forEach(function (r, idx) {
       var c = cells[idx];
-      c.className = "band-" + band(r.s).toLowerCase() + (r.s === worst ? " worst" : "");
+      c.className = "band-" + band(r.s).toLowerCase() + (r.s === worst ? " worst" : "") + " tip";
+      c.setAttribute("title", "S_HNDL recomputed with the quantum horizon held at " + r.qt +
+        " years, keeping the confidentiality lifetime and migration time you entered. Example: at QT = " +
+        r.qt + " the gap G is " + fmtYears(state.dl + state.mt - r.qt) + " years, so T is " +
+        r.t.toFixed(2) + " and the result is " + r.s.toFixed(1) + ".");
       c.innerHTML = "";
       c.appendChild(el("div", null, "QT = " + r.qt + " yr"));
       var line = el("div");

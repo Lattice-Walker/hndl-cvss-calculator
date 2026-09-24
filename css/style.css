@@ -182,9 +182,17 @@ details > div { padding: 0 8px 8px; }
 .fig-label { display: block; font-size: 12px; opacity: 0.8; }
 .fig { font-size: 18px; font-weight: bold; }
 
-/* Hoverable explanation of a result figure. */
+/* Anything carrying a hover explanation. Labels get the dotted underline
+   that signals it; controls keep their own cursor and affordance. */
 .tip { cursor: help; }
-.tip .fig-label, .tip .headline-label { text-decoration: underline dotted; text-underline-offset: 2px; }
+button.tip { cursor: pointer; }
+.tip .fig-label,
+.tip .headline-label,
+.metric-label.tip,
+.group-title.tip {
+  text-decoration: underline dotted var(--border);
+  text-underline-offset: 3px;
+}
 
 /* Options the coherence rules forbid. Kept visible and hoverable so the
    tooltip carrying the reason still works, which `disabled` would suppress. */

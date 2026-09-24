@@ -16,40 +16,40 @@
   </header>
 
 <div class="mini" id="mini">
-  <span class="mini-score tip" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands."><var>S</var><sub>HNDL</sub> <strong id="mini-hndl"></strong> <span id="mini-band"></span></span>
-  <span class="mini-figs"><span class="tip" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm."><var>S</var><sub>dep</sub> <span id="mini-dep"></span></span> &middot; <span class="tip" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose."><var>S</var><sub>harv</sub> <span id="mini-harv"></span></span> &middot; <span class="tip" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full."><var>T</var> <span id="mini-t"></span></span></span>
+  <span class="mini-score tip" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands. Example: with S_dep 6.3, S_harv 8.2 and T 1.00, the result is 8.2 and the band is High."><var>S</var><sub>HNDL</sub> <strong id="mini-hndl"></strong> <span id="mini-band"></span></span>
+  <span class="mini-figs"><span class="tip" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm. Example: the default vector scores 6.3 for a padding-oracle-class attack on TLS 1.0 CBC suites."><var>S</var><sub>dep</sub> <span id="mini-dep"></span></span> &middot; <span class="tip" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose. Example: the default vector scores 8.2, the entire session plaintext recovered later with no interaction and no rate limit."><var>S</var><sub>harv</sub> <span id="mini-harv"></span></span> &middot; <span class="tip" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full. Example: DL 30 plus MT 4 against a QT of 15 leaves a 19-year gap, so T is 1.00."><var>T</var> <span id="mini-t"></span></span></span>
 </div>
 
 <div class="layout">
 <main>
 
   <section id="sec-dep">
-    <h2 class="bar">A. Deprecation vector : <var>S</var><sub>dep</sub></h2>
+    <h2 class="bar tip" title="The first of the two threat models: an attacker acting now against the deprecated TLS configuration. Example: a padding oracle recovering a session cookie a byte at a time.">A. Deprecation vector : <var>S</var><sub>dep</sub></h2>
     <div id="dep-base"></div>
     <div id="dep-extra"></div>
   </section>
 
   <section id="sec-harv">
-    <h2 class="bar">B. Harvest vector : <var>S</var><sub>harv</sub></h2>
+    <h2 class="bar tip" title="The second threat model: the same endpoint recorded today and decrypted once a quantum computer exists. Example: a year of captured sessions opened in 2040.">B. Harvest vector : <var>S</var><sub>harv</sub></h2>
     <p class="hint">Passive collection now, retrospective decryption once a quantum computer is available.</p>
     <div id="harv-base"></div>
   </section>
 
   <section id="sec-temporal">
-    <h2 class="bar">C. Temporal exposure : <var>T</var></h2>
+    <h2 class="bar tip" title="How much of the harvest score actually applies, from how long the data must outlive the protection it has. Example: data needing 30 years of secrecy against a 15-year horizon is fully exposed.">C. Temporal exposure : <var>T</var></h2>
     <div class="years">
-      <label><span>Confidentiality lifetime <abbr title="How long the data must remain secret">DL</abbr> (years)</span>
-        <input type="number" id="dl" min="0" step="any"></label>
-      <label><span>Migration time <abbr title="Time to deploy hybrid or post-quantum key exchange">MT</abbr> (years)</span>
-        <input type="number" id="mt" min="0" step="any"></label>
-      <label><span>Quantum horizon <abbr title="Years until a cryptanalytically relevant quantum computer is assumed available">QT</abbr> (years)</span>
-        <input type="number" id="qt" min="0" step="any"></label>
+      <label><span class="tip" title="DL &mdash; how many years this traffic must stay secret, counted from today. Example: 30 for clinical records or a long-lived contract, 2 for a session cookie that expires next quarter.">Confidentiality lifetime, years</span>
+        <input type="number" id="dl" min="0" step="any" title="DL &mdash; how many years this traffic must stay secret, counted from today. Example: 30 for clinical records or a long-lived contract, 2 for a session cookie that expires next quarter."></label>
+      <label><span class="tip" title="MT &mdash; how many years it takes to get hybrid or post-quantum key exchange deployed across every client and server on this path. Example: 4 where the estate includes embedded clients on a slow refresh cycle.">Migration time, years</span>
+        <input type="number" id="mt" min="0" step="any" title="MT &mdash; how many years it takes to get hybrid or post-quantum key exchange deployed across every client and server on this path. Example: 4 where the estate includes embedded clients on a slow refresh cycle."></label>
+      <label><span class="tip" title="QT &mdash; how many years until you assume a cryptanalytically relevant quantum computer exists. It is an assumption rather than a measurement, which is why the strip below re-runs the result at 10, 15 and 20. Example: 15 as a central estimate.">Quantum horizon, years</span>
+        <input type="number" id="qt" min="0" step="any" title="QT &mdash; how many years until you assume a cryptanalytically relevant quantum computer exists. It is an assumption rather than a measurement, which is why the strip below re-runs the result at 10, 15 and 20. Example: 15 as a central estimate."></label>
     </div>
-    <p class="formula"><var>G</var> = DL + MT &minus; QT = <strong id="g-out"></strong>
-      &nbsp;&nbsp; <var>T</var> = <span id="t-rule"></span> = <strong id="t-out"></strong></p>
-    <p class="verdict" id="verdict"></p>
+    <p class="formula"><span class="tip" title="G &mdash; Mosca's gap: the number of years by which the secrecy you need outlasts the protection you will have. Example: DL 30 plus MT 4 against a QT of 15 leaves a gap of 19 years."><var>G</var> = DL + MT &minus; QT</span> = <strong id="g-out"></strong>
+      &nbsp;&nbsp; <span class="tip" title="T &mdash; the gap expressed as a fraction of the horizon and capped at 1, which is what scales the harvest score. Example: a 19-year gap against a 15-year horizon exceeds 1, so T is 1 and the harvest vector applies in full."><var>T</var> = <span id="t-rule"></span></span> = <strong id="t-out"></strong></p>
+    <p class="verdict tip" id="verdict" title="Whether Mosca's inequality is satisfied. Example: a gap of zero or less means the data stops needing protection before a quantum computer is assumed to arrive, so the harvest vector drops out of the result."></p>
 
-    <h3 class="subbar">Sensitivity to the quantum horizon</h3>
+    <h3 class="subbar tip" title="The same result at three different assumptions about the quantum horizon, because that number is the least defensible input on the page. Example: a case that scores 6.3 at QT = 20 may score 8.2 at QT = 10.">Sensitivity to the quantum horizon</h3>
     <div class="strip" id="strip"></div>
     <p class="hint">QT is an assumption, not a measurement: record the worst case of the three.</p>
   </section>
@@ -57,35 +57,35 @@
 </main>
 
 <aside class="results" id="results">
-  <h2 class="bar">Result</h2>
-  <div class="headline tip" id="headline" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands.">
+  <h2 class="bar tip" title="The two scores, the factor that combines them, and the strings to paste into a finding. Example: 6.3 and 8.2 combining to 8.2 High.">Result</h2>
+  <div class="headline tip" id="headline" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands. Example: with S_dep 6.3, S_harv 8.2 and T 1.00, the result is 8.2 and the band is High.">
     <div class="headline-label"><var>S</var><sub>HNDL</sub></div>
     <div class="headline-score"><span id="hndl-score"></span> <span id="hndl-band"></span></div>
   </div>
   <div class="figures">
-    <div class="tip" id="fig-dep" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm."><span class="fig-label"><var>S</var><sub>dep</sub></span><span class="fig" id="dep-score"></span></div>
-    <div class="tip" id="fig-harv" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose."><span class="fig-label"><var>S</var><sub>harv</sub></span><span class="fig" id="harv-score"></span></div>
-    <div class="tip" id="fig-t" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full."><span class="fig-label"><var>T</var></span><span class="fig" id="t-score"></span></div>
+    <div class="tip" id="fig-dep" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm. Example: the default vector scores 6.3 for a padding-oracle-class attack on TLS 1.0 CBC suites."><span class="fig-label"><var>S</var><sub>dep</sub></span><span class="fig" id="dep-score"></span></div>
+    <div class="tip" id="fig-harv" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose. Example: the default vector scores 8.2, the entire session plaintext recovered later with no interaction and no rate limit."><span class="fig-label"><var>S</var><sub>harv</sub></span><span class="fig" id="harv-score"></span></div>
+    <div class="tip" id="fig-t" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full. Example: DL 30 plus MT 4 against a QT of 15 leaves a 19-year gap, so T is 1.00."><span class="fig-label"><var>T</var></span><span class="fig" id="t-score"></span></div>
   </div>
 
   <div class="warnings" id="warnings" hidden></div>
 
   <div class="out">
-    <div class="out-head">Deprecation vector <a id="dep-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
+    <div class="out-head tip" title="The deprecation vector as a standard CVSS v4.0 string, which any CVSS v4.0 calculator will reproduce. Example: CVSS:4.0/AV:N/AC:H/AT:P/... scores 6.3 at FIRST as it does here.">Deprecation vector <a id="dep-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
     <code id="dep-vector"></code>
-    <button type="button" class="copy" data-copy="dep-vector">Copy</button>
+    <button type="button" class="copy tip" data-copy="dep-vector" title="Copies the deprecation vector string on its own. Example: for pasting into a ticket field that expects a single CVSS vector.">Copy</button>
   </div>
   <div class="out">
-    <div class="out-head">Harvest vector <a id="harv-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
+    <div class="out-head tip" title="The harvest vector as a standard CVSS v4.0 string. Example: paste it into the FIRST calculator and the same 8.2 comes back.">Harvest vector <a id="harv-link" href="#" target="_blank" rel="noopener">verify at FIRST</a></div>
     <code id="harv-vector"></code>
-    <button type="button" class="copy" data-copy="harv-vector">Copy</button>
+    <button type="button" class="copy tip" data-copy="harv-vector" title="Copies the harvest vector string on its own. Example: for pasting into a ticket field that expects a single CVSS vector.">Copy</button>
   </div>
   <div class="out">
-    <div class="out-head">HNDL extension</div>
+    <div class="out-head tip" title="The inputs and outputs that are not part of CVSS, in one line, so the assessment can be reproduced. Example: HNDL:1.0/DL:30/MT:4/QT:15/T:1.00/SH:8.2/SA:8.2.">HNDL extension</div>
     <code id="ext-string"></code>
-    <button type="button" class="copy" data-copy="ext-string">Copy</button>
+    <button type="button" class="copy tip" data-copy="ext-string" title="Copies the HNDL extension line on its own. Example: for a custom field recording the temporal assumptions.">Copy</button>
   </div>
-  <button type="button" class="copy full" id="copy-record">Copy full record</button>
+  <button type="button" class="copy full tip" id="copy-record" title="Copies both vector strings and the HNDL extension line together, one per line. Example: the three lines to paste into a finding write-up.">Copy full record</button>
   <p class="hint">The page URL holds the full assessment and can be shared as a link.</p>
 </aside>
 </div>
@@ -107,6 +107,7 @@
 <script src="js/cvss-v4/max_composed.js"></script>
 <script src="js/cvss-v4/max_severity.js"></script>
 <script src="js/cvss-v4/cvss_score.js"></script>
+<script src="js/help.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

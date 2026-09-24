@@ -27,6 +27,10 @@ S_HNDL = max(S_dep, T * S_harv)
 
 The page also recomputes $S_HNDL$ at $QT = 10$, $15$ and $20$ and marks the worst case, which is the figure to record.
 
+## Labels and hover help
+
+Metric and option labels are written out in full, without their letter codes: the button is `Network`, not `Network (N)`. Every control on the page — each metric, each of its choices, each group heading, the three year inputs, the result figures and the sensitivity cells — carries a hover explanation that states the code, defines the value and gives a worked example, so the mapping back to the vector string is one hover away. Base metrics are explained twice, because the same metric means something different under an active attack than under passive collection.
+
 ## Coherence rules
 
 The two vectors describe different attacks on one endpoint, so they are free to differ — the defaults already differ on AC, VC and VI. Some combinations are still contradictory, and the page blocks them rather than scoring them. Hovering a blocked option gives the reason; clicking one states it inline.
