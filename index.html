@@ -16,8 +16,8 @@
   </header>
 
 <div class="mini" id="mini">
-  <span class="mini-score"><var>S</var><sub>HNDL</sub> <strong id="mini-hndl"></strong> <span id="mini-band"></span></span>
-  <span class="mini-figs"><var>S</var><sub>dep</sub> <span id="mini-dep"></span> &middot; <var>S</var><sub>harv</sub> <span id="mini-harv"></span> &middot; <var>T</var> <span id="mini-t"></span></span>
+  <span class="mini-score tip" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands."><var>S</var><sub>HNDL</sub> <strong id="mini-hndl"></strong> <span id="mini-band"></span></span>
+  <span class="mini-figs"><span class="tip" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm."><var>S</var><sub>dep</sub> <span id="mini-dep"></span></span> &middot; <span class="tip" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose."><var>S</var><sub>harv</sub> <span id="mini-harv"></span></span> &middot; <span class="tip" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full."><var>T</var> <span id="mini-t"></span></span></span>
 </div>
 
 <div class="layout">
@@ -58,14 +58,14 @@
 
 <aside class="results" id="results">
   <h2 class="bar">Result</h2>
-  <div class="headline" id="headline">
+  <div class="headline tip" id="headline" title="HNDL-adjusted score: the figure to record. S_HNDL = max(S_dep, T &times; S_harv), rounded to one decimal and read against the standard CVSS severity bands.">
     <div class="headline-label"><var>S</var><sub>HNDL</sub></div>
     <div class="headline-score"><span id="hndl-score"></span> <span id="hndl-band"></span></div>
   </div>
   <div class="figures">
-    <div><span class="fig-label"><var>S</var><sub>dep</sub></span><span class="fig" id="dep-score"></span></div>
-    <div><span class="fig-label"><var>S</var><sub>harv</sub></span><span class="fig" id="harv-score"></span></div>
-    <div><span class="fig-label"><var>T</var></span><span class="fig" id="t-score"></span></div>
+    <div class="tip" id="fig-dep" title="Deprecation vector score: an ordinary present-day attack on the deprecated TLS configuration (padding-oracle class), scored with the unmodified FIRST CVSS v4.0 algorithm."><span class="fig-label"><var>S</var><sub>dep</sub></span><span class="fig" id="dep-score"></span></div>
+    <div class="tip" id="fig-harv" title="Harvest vector score: passive collection of the traffic now, decrypted later once a quantum computer exists. Scored at full CVSS v4.0 before the temporal factor is applied; Exploit Maturity is left Not Defined on purpose."><span class="fig-label"><var>S</var><sub>harv</sub></span><span class="fig" id="harv-score"></span></div>
+    <div class="tip" id="fig-t" title="Temporal exposure factor, 0 to 1, from Mosca's inequality. G = DL + MT - QT; T = 0 when G &lt;= 0, otherwise min(1, G / QT). It scales S_harv, so T = 0 removes the harvest vector from the result and T = 1 applies it in full."><span class="fig-label"><var>T</var></span><span class="fig" id="t-score"></span></div>
   </div>
 
   <div class="out">

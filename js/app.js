@@ -98,6 +98,17 @@
     return "Critical";
   }
 
+  // T is a 0-1 multiplier rather than a score, so it is coloured on the same
+  // five-step scale stretched over that range: T = 0.62 reads as Medium.
+  function bandT(t) {
+    return band(t * 10);
+  }
+
+  function setBand(id, bandName, extra) {
+    document.getElementById(id).className =
+      (extra ? extra + " " : "") + "band-" + bandName.toLowerCase();
+  }
+
   function fmtYears(n) {
     return String(Math.round(n * 100) / 100);
   }
@@ -298,7 +309,7 @@
     var worst = Math.max.apply(null, results.map(function (r) { return r.s; }));
     results.forEach(function (r, idx) {
       var c = cells[idx];
-      c.className = r.s === worst ? "worst" : "";
+      c.className = "band-" + band(r.s).toLowerCase() + (r.s === worst ? " worst" : "");
       c.innerHTML = "";
       c.appendChild(el("div", null, "QT = " + r.qt + " yr"));
       var line = el("div");
@@ -312,16 +323,19 @@
     // Results panel
     setText("hndl-score", sHndl.toFixed(1));
     setText("hndl-band", bandName);
-    document.getElementById("headline").className = "headline band-" + bandName.toLowerCase();
+    setBand("headline", bandName, "headline tip");
     setText("dep-score", sDep.toFixed(1));
     setText("harv-score", sHarv.toFixed(1));
     setText("t-score", tmp.t.toFixed(2));
+    setBand("fig-dep", band(sDep), "tip");
+    setBand("fig-harv", band(sHarv), "tip");
+    setBand("fig-t", bandT(tmp.t), "tip");
     setText("mini-hndl", sHndl.toFixed(1));
     setText("mini-band", bandName);
     setText("mini-dep", sDep.toFixed(1));
     setText("mini-harv", sHarv.toFixed(1));
     setText("mini-t", tmp.t.toFixed(2));
-    document.getElementById("mini").className = "mini band-" + bandName.toLowerCase();
+    setBand("mini", bandName, "mini");
 
     var depVec = vectorString(state.dep);
     var harvVec = vectorString(state.harv);

@@ -8,6 +8,15 @@
   --mint-light: #dcf4e9;
   --bar: #4b5e57;
   --soft: #f2f5f4;
+
+  /* Severity bands: conventional CVSS colour order, muted to match the page.
+     Each band is a background / text / edge triple so the same class works on
+     the large headline, the small figure boxes and the sensitivity strip. */
+  --none-bg: #eceff0;   --none-ink: #47555a;   --none-edge: #c3ccce;
+  --low-bg: #dff3e0;    --low-ink: #1f5c2e;    --low-edge: #9ed3a6;
+  --med-bg: #fdf0cf;    --med-ink: #74520a;    --med-edge: #e7c55f;
+  --high-bg: #fbdfcc;   --high-ink: #8a3a0b;   --high-edge: #eea370;
+  --crit-bg: #a32b1c;   --crit-ink: #ffffff;   --crit-edge: #7c1f14;
 }
 
 body {
@@ -118,13 +127,15 @@ details > div { padding: 0 8px 8px; }
 .strip { display: flex; gap: 6px; }
 .strip > div {
   flex: 1;
-  border: 1px solid var(--border);
+  border: 1px solid var(--band-edge, var(--border));
+  background: var(--band-bg, transparent);
+  color: var(--band-ink, inherit);
   padding: 5px 8px;
   font-size: 13px;
 }
-.strip > div.worst { border: 2px solid var(--bar); }
+.strip > div.worst { border-width: 2px; border-color: var(--bar); }
 .strip .s { font-size: 18px; font-weight: bold; }
-.strip-t { color: var(--muted); }
+.strip-t { opacity: 0.8; }
 .strip-worst { font-weight: bold; }
 
 /* Compact score bar, shown on narrow screens only */
@@ -139,21 +150,41 @@ details > div { padding: 0 8px 8px; }
   max-height: 100vh;
   overflow-y: auto;
 }
-.headline { border: 1px solid var(--border); padding: 8px 10px; }
+/* A band class only sets three custom properties; every result box below
+   consumes them. Going through variables keeps each box's own `border`
+   shorthand from winning on specificity and dropping the band colour. */
+.band-none     { --band-bg: var(--none-bg); --band-ink: var(--none-ink); --band-edge: var(--none-edge); }
+.band-low      { --band-bg: var(--low-bg);  --band-ink: var(--low-ink);  --band-edge: var(--low-edge); }
+.band-medium   { --band-bg: var(--med-bg);  --band-ink: var(--med-ink);  --band-edge: var(--med-edge); }
+.band-high     { --band-bg: var(--high-bg); --band-ink: var(--high-ink); --band-edge: var(--high-edge); }
+.band-critical { --band-bg: var(--crit-bg); --band-ink: var(--crit-ink); --band-edge: var(--crit-edge); }
+
+.headline {
+  border: 1px solid var(--band-edge, var(--border));
+  background: var(--band-bg, transparent);
+  color: var(--band-ink, inherit);
+  padding: 8px 10px;
+}
 .headline-label { font-size: 13px; }
 .headline-score { font-size: 34px; font-weight: bold; }
 #hndl-band { font-size: 18px; }
-.band-none { background: var(--soft); }
-.band-low { background: var(--mint-light); }
-.band-medium { background: var(--mint); }
-.band-high { background: #5cb991; }
-.band-critical { background: #2e7a5c; color: #fff; }
 
-.figures { display: flex; border: 1px solid var(--border); border-top: 0; }
-.figures > div { flex: 1; padding: 6px 10px; border-left: 1px solid var(--border); }
-.figures > div:first-child { border-left: 0; }
-.fig-label { display: block; font-size: 12px; color: var(--muted); }
+.figures { display: flex; gap: 4px; margin-top: 4px; }
+.figures > div {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--band-edge, var(--border));
+  background: var(--band-bg, transparent);
+  color: var(--band-ink, inherit);
+}
+/* The label inherits the band colour instead of --muted so it stays legible
+   on the dark Critical background. */
+.fig-label { display: block; font-size: 12px; opacity: 0.8; }
 .fig { font-size: 18px; font-weight: bold; }
+
+/* Hoverable explanation of a result figure. */
+.tip { cursor: help; }
+.tip .fig-label, .tip .headline-label { text-decoration: underline dotted; text-underline-offset: 2px; }
 
 .out { margin-top: 12px; }
 .out-head { font-size: 12px; font-weight: bold; margin-bottom: 2px; }
@@ -198,6 +229,8 @@ footer {
     margin: 12px -16px 0;
     padding: 6px 16px;
     border-bottom: 1px solid var(--border);
+    background: var(--band-bg, #fff);
+    color: var(--band-ink, inherit);
   }
   .mini-score { font-size: 15px; }
   .mini-score strong { font-size: 20px; }
