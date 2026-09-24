@@ -19,9 +19,18 @@ The temporal factor T comes from Mosca's inequality and three estimates in years
 ```
 G = DL + MT - QT
 T = 0                  if G <= 0
-T = min(1, G / QT)     if G > 0
+T = 1                  if G > 0 and QT = 0
+T = min(1, G / QT)     if G > 0 and QT > 0
 
 S_HNDL = max(S_dep, T * S_harv)
 ```
 
 The page also recomputes $S_HNDL$ at $QT = 10$, $15$ and $20$ and marks the worst case, which is the figure to record.
+
+## Coherence rules
+
+The two vectors describe different attacks on one endpoint, so they are free to differ — the defaults already differ on AC, VC and VI. Some combinations are still contradictory, and the page blocks them rather than scoring them. Hovering a blocked option gives the reason; clicking one states it inline.
+
+Because the harvest attacker is passive and retrospective, the harvest vector pins `AC:L`, `PR:N`, `UI:N`, `VI:N` and `VA:N`, and rejects `CR:X` (which CVSS v4.0 scores identically to `CR:H`). Because that attacker reads the whole plaintext of the same sessions, the harvest vector must be at least as severe as the deprecation vector on `AV`, `AT`, `VC` and `SC`; the rule is enforced from both sides. Inside the deprecation vector, `MSI:S` or `MSA:S` cannot be combined with Supplemental `S:N`.
+
+Vectors arriving in a shared link are repaired towards the stricter value and the change is reported. Contradictions that are not a single choice — identical vectors, `DL = 0` with a raised `CR`, `QT = 0`, a recorded figure below the worst sampled horizon, or environmental and threat metrics used on one vector but unavailable on the other — are listed as notes beside the result instead of being blocked.

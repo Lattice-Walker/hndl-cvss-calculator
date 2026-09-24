@@ -31,7 +31,51 @@
   };
   var E_NOTE = "The absence of a present-day quantum decryption capability is the premise of the threat, not a mitigation of it.";
 
+  var DEP_NOTES = {
+    E: "Not Defined is not neutral: CVSS v4.0 scores E:X exactly as E:A (Attacked). The harvest vector has no equivalent control, so lowering this here widens the gap between the two scores."
+  };
+  var SUPP_NOTE = "These metrics are recorded in the vector string but do not enter any score, by CVSS v4.0 design. Nothing here can move S_dep.";
+
+  // ---- Coherence rules --------------------------------------------------
+  // The two vectors describe different attacks on the same endpoint, so most
+  // metrics are free to differ. Three families of pairing are not:
+  //
+  //   1. The harvest attacker is passive and retrospective, which pins some
+  //      of its metrics outright (HARV_PINNED).
+  //   2. The harvest attacker is never worse off than the active one on
+  //      position, conditions or disclosure, because it reads the whole
+  //      plaintext of the same sessions (HARV_AT_LEAST).
+  //   3. A few values inside the deprecation vector contradict each other
+  //      (DEP_MUTEX).
+  //
+  // Values in expectedMetricOrder are listed most-severe first, so a lower
+  // index is a more severe value.
+
+  var HARV_PINNED = {
+    AC: { value: "L", why: "Fixed at Low on this vector. Copying ciphertext off a tap involves no evasion and no preparation, so Attack Complexity High would be describing the active attack on panel A, not this one." },
+    PR: { value: "N", why: "Fixed at None on this vector. Collecting traffic in transit requires no privileges on the endpoint." },
+    UI: { value: "N", why: "Fixed at None on this vector. Passive collection requires no action from any victim." },
+    VI: { value: "N", why: "Fixed at None on this vector. Harvesting is passive and the decryption is retrospective, so a session that has already happened cannot be modified. Integrity consequences of decrypted material belong in the Subsequent System metrics." },
+    VA: { value: "N", why: "Fixed at None on this vector. A passive, retrospective attack denies nothing." }
+  };
+
+  var HARV_AT_LEAST = {
+    AV: "Both attacks read the same channel, so the harvest vector cannot require a less accessible position than the deprecation vector.",
+    AT: "The harvest attack needs no conditions beyond the ones the active attack already needs.",
+    VC: "Retrospective decryption yields the entire plaintext of the same sessions, so it cannot disclose less than the active attack extracts from them.",
+    SC: "Retrospective decryption discloses a superset of what the active attack extracts, so its subsequent impact cannot be lower."
+  };
+
+  var CR_X_WHY = "Not Defined is scored exactly as High here: CVSS v4.0 maps CR:X to CR:H. Choosing it would record a value the score does not reflect, so state the requirement explicitly.";
+  var SAFETY_WHY_MS = "Supplemental Safety is set to Negligible (S:N). A Safety-rated subsequent impact contradicts that. Change Safety first.";
+  var SAFETY_WHY_S = "Modified Subsequent Integrity or Availability is set to Safety (S). Declaring safety impact Negligible contradicts that.";
+
+  // Deprecation-vector metrics with no counterpart on the harvest vector.
+  var DEP_ONLY = ["E", "CR", "IR", "AR", "MAV", "MAC", "MAT", "MPR", "MUI",
+    "MVC", "MVI", "MVA", "MSC", "MSI", "MSA"];
+
   var state = {};
+  var loadRepairs = [];
 
   // ---- CVSS vectors -------------------------------------------------------
 
@@ -113,6 +157,106 @@
     return String(Math.round(n * 100) / 100);
   }
 
+  // ---- Coherence checks ---------------------------------------------------
+
+  function rank(key, value) {
+    return ORDER[key].indexOf(value);
+  }
+
+  // Returns the reason this option may not be selected, or null if it may.
+  function blockReason(which, key, value) {
+    if (which === "harv") {
+      var pin = HARV_PINNED[key];
+      if (pin && value !== pin.value) return pin.why;
+      if (key === "CR" && value === "X") return CR_X_WHY;
+    }
+
+    var why = HARV_AT_LEAST[key];
+    if (why) {
+      if (which === "harv" && rank(key, value) > rank(key, state.dep[key])) {
+        return why + " The deprecation vector is set to " + key + ":" + state.dep[key] +
+          ", which this would fall below.";
+      }
+      if (which === "dep" && rank(key, value) < rank(key, state.harv[key])) {
+        return why + " The harvest vector is set to " + key + ":" + state.harv[key] +
+          ", which this would exceed. Raise the harvest vector first.";
+      }
+    }
+
+    if (which === "dep") {
+      if ((key === "MSI" || key === "MSA") && value === "S" && state.dep.S === "N") {
+        return SAFETY_WHY_MS;
+      }
+      if (key === "S" && value === "N" && (state.dep.MSI === "S" || state.dep.MSA === "S")) {
+        return SAFETY_WHY_S;
+      }
+    }
+    return null;
+  }
+
+  // Buttons enforce the rules for clicks, but a shared URL can carry a pair
+  // that breaks them. Repair the harvest vector towards the stricter value
+  // and report what changed, so the state behind the blocked buttons is
+  // never itself contradictory.
+  function normalise() {
+    var fixed = [];
+    function set(vec, key, value) {
+      fixed.push(key + ":" + state[vec][key] + " \u2192 " + key + ":" + value);
+      state[vec][key] = value;
+    }
+    Object.keys(HARV_PINNED).forEach(function (k) {
+      if (state.harv[k] !== HARV_PINNED[k].value) set("harv", k, HARV_PINNED[k].value);
+    });
+    if (state.harv.CR === "X") set("harv", "CR", "H");
+    Object.keys(HARV_AT_LEAST).forEach(function (k) {
+      if (rank(k, state.harv[k]) > rank(k, state.dep[k])) set("harv", k, state.dep[k]);
+    });
+    if (state.dep.S === "N" && (state.dep.MSI === "S" || state.dep.MSA === "S")) {
+      set("dep", "S", "X");
+    }
+    return fixed;
+  }
+
+  // Contradictions that are not a single button press, so they are reported
+  // rather than blocked.
+  function coherenceWarnings(sHndl, worst, tmp) {
+    var out = [];
+
+    if (loadRepairs.length) {
+      out.push("The vectors in the link broke a coherence rule and were adjusted: " +
+        loadRepairs.join(", ") + ".");
+    }
+
+    var same = BASE.every(function (k) { return state.dep[k] === state.harv[k]; });
+    if (same) {
+      out.push("The two vectors are now identical, so S_HNDL reduces to S_dep and the harvest model contributes nothing. The panels are meant to describe different attacks on the same endpoint.");
+    }
+
+    if (state.dl === 0 && (state.harv.CR === "H" || state.harv.CR === "M")) {
+      out.push("Confidentiality lifetime is 0 years, but the harvest vector carries CR:" +
+        state.harv.CR + ". Data that need not stay secret cannot also carry a raised confidentiality requirement.");
+    }
+
+    if (state.qt === 0) {
+      out.push("Quantum horizon is 0 years, where T = min(1, G / QT) is undefined. T is taken as 1, i.e. a cryptanalytically relevant quantum computer assumed to exist today.");
+    }
+
+    if (sHndl < worst) {
+      out.push("The recorded figure is " + sHndl.toFixed(1) + " at QT = " + fmtYears(state.qt) +
+        ", but the worst of the sampled horizons is " + worst.toFixed(1) +
+        ". The method says to record the worst case.");
+    }
+
+    var used = DEP_ONLY.filter(function (k) { return state.dep[k] !== "X"; })
+      .map(function (k) { return k + ":" + state.dep[k]; });
+    if (used.length) {
+      out.push("The deprecation vector uses " + used.join(", ") +
+        ". The harvest vector has no equivalent metrics, so S_dep and S_harv are not scored on the same footing.");
+    }
+
+    return out;
+  }
+
   // ---- Rendering ----------------------------------------------------------
 
   function el(tag, attrs, text) {
@@ -135,6 +279,7 @@
         "data-which": which,
         "data-key": key,
         "data-value": o.value,
+        "data-tip": o.tooltip || "",
         title: o.tooltip || "",
         "aria-pressed": "false"
       }, o.label);
@@ -170,11 +315,19 @@
     });
   }
 
-  function details(title, sections, which) {
+  function sectionNote(label, text) {
+    var n = el("div", { "class": "note" });
+    n.appendChild(el("b", null, label + " "));
+    n.appendChild(document.createTextNode(text));
+    return n;
+  }
+
+  function details(title, sections, which, notes, lead) {
     var d = el("details");
     d.appendChild(el("summary", null, title));
     var inner = el("div");
-    sections.forEach(function (s) { renderConfigSection(inner, which, s); });
+    if (lead) inner.appendChild(sectionNote("Note:", lead));
+    sections.forEach(function (s) { renderConfigSection(inner, which, s, notes); });
     d.appendChild(inner);
     return d;
   }
@@ -182,10 +335,10 @@
   function buildForm() {
     renderConfigSection(document.getElementById("dep-base"), "dep", "Base Metrics");
     var extra = document.getElementById("dep-extra");
-    extra.appendChild(details("Supplemental Metrics", ["Supplemental Metrics"], "dep"));
+    extra.appendChild(details("Supplemental Metrics", ["Supplemental Metrics"], "dep", null, SUPP_NOTE));
     extra.appendChild(details("Environmental Metrics",
       ["Environmental (Modified Base Metrics)", "Environmental (Security Requirements)"], "dep"));
-    extra.appendChild(details("Threat Metrics", ["Threat Metrics"], "dep"));
+    extra.appendChild(details("Threat Metrics", ["Threat Metrics"], "dep", DEP_NOTES));
 
     var harv = document.getElementById("harv-base");
     renderConfigSection(harv, "harv", "Base Metrics", HARV_NOTES);
@@ -283,8 +436,22 @@
     var buttons = document.querySelectorAll("button[data-key]");
     for (var i = 0; i < buttons.length; i++) {
       var b = buttons[i];
-      var sel = state[b.getAttribute("data-which")];
-      b.setAttribute("aria-pressed", String(sel[b.getAttribute("data-key")] === b.getAttribute("data-value")));
+      var which = b.getAttribute("data-which");
+      var key = b.getAttribute("data-key");
+      var value = b.getAttribute("data-value");
+      b.setAttribute("aria-pressed", String(state[which][key] === value));
+      // aria-disabled rather than disabled: a disabled button suppresses its
+      // own title tooltip, and the reason is the point of blocking it.
+      var reason = blockReason(which, key, value);
+      if (reason) {
+        b.setAttribute("aria-disabled", "true");
+        b.setAttribute("title", reason);
+        b.className = "blocked";
+      } else {
+        b.removeAttribute("aria-disabled");
+        b.setAttribute("title", b.getAttribute("data-tip") || "");
+        b.className = "";
+      }
     }
 
     var sDep = score(state.dep);
@@ -337,6 +504,20 @@
     setText("mini-t", tmp.t.toFixed(2));
     setBand("mini", bandName, "mini");
 
+    var notes = coherenceWarnings(sHndl, worst, tmp);
+    var box = document.getElementById("warnings");
+    box.innerHTML = "";
+    if (notes.length) {
+      box.removeAttribute("hidden");
+      box.appendChild(el("div", { "class": "warn-head" },
+        notes.length === 1 ? "1 coherence note" : notes.length + " coherence notes"));
+      var ul = el("ul");
+      notes.forEach(function (w) { ul.appendChild(el("li", null, w)); });
+      box.appendChild(ul);
+    } else {
+      box.setAttribute("hidden", "");
+    }
+
     var depVec = vectorString(state.dep);
     var harvVec = vectorString(state.harv);
     setText("dep-vector", depVec);
@@ -351,6 +532,24 @@
       "/SA:" + sHndl.toFixed(1));
 
     writeHash();
+  }
+
+  // ---- Blocked-action feedback --------------------------------------------
+
+  function clearBlockedNote() {
+    var old = document.querySelector(".blocked-note");
+    if (old) old.parentNode.removeChild(old);
+  }
+
+  // Hovering a blocked option already shows the reason as a tooltip; clicking
+  // one states it inline, next to the option, for keyboard and touch users.
+  function showBlocked(button, reason) {
+    var row = button.closest(".metric");
+    if (!row) return;
+    var n = el("div", { "class": "blocked-note", role: "alert" });
+    n.appendChild(el("b", null, "Blocked: "));
+    n.appendChild(document.createTextNode(reason));
+    row.appendChild(n);
   }
 
   // ---- Clipboard ----------------------------------------------------------
@@ -389,12 +588,23 @@
     buildForm();
     resetState();
     readHash();
+    loadRepairs = normalise();
     syncInputs();
 
     document.querySelector("main").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-key]");
       if (!b) return;
-      state[b.getAttribute("data-which")][b.getAttribute("data-key")] = b.getAttribute("data-value");
+      var which = b.getAttribute("data-which");
+      var key = b.getAttribute("data-key");
+      var value = b.getAttribute("data-value");
+      clearBlockedNote();
+      var reason = blockReason(which, key, value);
+      if (reason) {
+        showBlocked(b, reason);
+        return;
+      }
+      loadRepairs = [];
+      state[which][key] = value;
       refresh();
     });
 
@@ -407,6 +617,8 @@
           return;
         }
         input.removeAttribute("aria-invalid");
+        clearBlockedNote();
+        loadRepairs = [];
         state[k] = n;
         refresh();
       });
@@ -430,6 +642,8 @@
     window.addEventListener("hashchange", function () {
       resetState();
       readHash();
+      loadRepairs = normalise();
+      clearBlockedNote();
       syncInputs();
       refresh();
     });
