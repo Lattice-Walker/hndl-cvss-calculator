@@ -1,0 +1,6 @@
+Vendored unmodified from the official FIRST CVSS v4.0 calculator:
+https://github.com/FIRSTdotorg/cvss-v4-calculator
+commit c5b0d409ae9f57c44264c6ce5f27d89298e1d32a (2024-08-19)
+
+Files: metrics.js, cvss_config.js, cvss_lookup.js, max_composed.js,
+max_severity.js, cvss_score.js. Licence: BSD-2-Clause (see LICENSE).
