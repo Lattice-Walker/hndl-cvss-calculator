@@ -1,6 +1,6 @@
 # HNDL-adjusted CVSS v4.0 calculator
 
-A static web page that scores a TLS endpoint twice: once against an ordinary present-day attack and once against Harvest-Now-Decrypt-Later. It then combines the two into one score that fits the standard CVSS severity bands.
+A static web page that scores a TLS endpoint twice: once against an ordinary present-day attack and once against Harvest-Now-Decrypt-Later. It then combines the two into one score that fits the standard CVSS severity bands. The calculator's underlying systems and math are original, while the user interface was developed with the assistance of AI-based tools.
 
 ## How the score works
 
