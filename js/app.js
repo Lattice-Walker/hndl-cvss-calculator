@@ -1,0 +1,739 @@
+// HNDL-adjusted CVSS v4.0 calculator.
+// Scoring is delegated to FIRST's vendored implementation in js/cvss-v4/
+// (globals: expectedMetricOrder, cvssConfig, cvssLookup_global, maxSeverity,
+// macroVector, cvss_score). Everything here is wrapped in an IIFE because the
+// vendored code assigns undeclared globals and must not collide with ours.
+(function () {
+  "use strict";
+
+  if (typeof cvss_score !== "function" || typeof macroVector !== "function") {
+    document.getElementById("results").insertAdjacentHTML("afterbegin",
+      "<p><strong>The vendored CVSS v4.0 scoring files in js/cvss-v4/ failed to load.</strong></p>");
+    return;
+  }
+
+  var ORDER = expectedMetricOrder;
+  var BASE = ["AV", "AC", "AT", "PR", "UI", "VC", "VI", "VA", "SC", "SI", "SA"];
+  var HARV_ALLOWED = BASE.concat(["CR"]);
+
+  var DEFAULTS = {
+    dep: "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+    harv: "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N/CR:H",
+    dl: 30,
+    mt: 4,
+    qt: 15
+  };
+  var SENSITIVITY_QT = [10, 15, 20];
+
+  var HARV_NOTES = {
+    AT: "Set to None where traffic crosses international transit or a jurisdiction in which bulk collection is a standing practice.",
+    SC: "Raise to High where harvested sessions carry credentials, long-lived tokens or key material."
+  };
+  var E_NOTE = "The absence of a present-day quantum decryption capability is the premise of the threat, not a mitigation of it.";
+  var E_LOCKED_TIP = "E:X \u2014 held at Not Defined on this vector, which CVSS v4.0 scores as Attacked. Lowering it would treat the absence of a quantum computer as a mitigation, when it is the premise of the whole threat. Example: setting Unreported here would score a harvest that nobody can decrypt yet as though it were harmless.";
+
+  var DEP_NOTES = {
+    E: "Not Defined is not neutral: CVSS v4.0 scores E:X exactly as E:A (Attacked). The harvest vector has no equivalent control, so lowering this here widens the gap between the two scores."
+  };
+  var SUPP_NOTE = "These metrics are recorded in the vector string but do not enter any score, by CVSS v4.0 design. Nothing here can move S_dep.";
+
+  // ---- Coherence rules --------------------------------------------------
+  // The two vectors describe different attacks on the same endpoint, so most
+  // metrics are free to differ. Three families of pairing are not:
+  //
+  //   1. The harvest attacker is passive and retrospective, which pins some
+  //      of its metrics outright (HARV_PINNED).
+  //   2. The harvest attacker is never worse off than the active one on
+  //      position, conditions or disclosure, because it reads the whole
+  //      plaintext of the same sessions (HARV_AT_LEAST).
+  //   3. A few values inside the deprecation vector contradict each other
+  //      (DEP_MUTEX).
+  //
+  // Values in expectedMetricOrder are listed most-severe first, so a lower
+  // index is a more severe value.
+
+  var HARV_PINNED = {
+    AC: {
+      value: "L",
+      why: "Fixed at Low on this vector. Copying ciphertext off a tap involves no evasion and no preparation, so Attack Complexity High would be describing the active attack on panel A, not this one.",
+      ex: "mirroring a switch port and writing the capture to disk works the first time and every time."
+    },
+    PR: {
+      value: "N",
+      why: "Fixed at None on this vector. Collecting traffic in transit requires no privileges on the endpoint.",
+      ex: "a tap upstream of the load balancer never authenticates to anything."
+    },
+    UI: {
+      value: "N",
+      why: "Fixed at None on this vector. Passive collection requires no action from any victim.",
+      ex: "the capture runs whether or not anyone uses the service that day."
+    },
+    VI: {
+      value: "N",
+      why: "Fixed at None on this vector. Harvesting is passive and the decryption is retrospective, so a session that has already happened cannot be modified. Integrity consequences of decrypted material belong in the Subsequent System metrics.",
+      ex: "reading a 2026 session in 2038 does not alter a byte of it."
+    },
+    VA: {
+      value: "N",
+      why: "Fixed at None on this vector. A passive, retrospective attack denies nothing.",
+      ex: "throughput and error rates are unchanged while the capture runs."
+    }
+  };
+
+  var HARV_AT_LEAST = {
+    AV: {
+      why: "Both attacks read the same channel, so the harvest vector cannot require a less accessible position than the deprecation vector.",
+      ex: "if the active attacker reaches the endpoint from the internet, a collector on the same path reaches the ciphertext too."
+    },
+    AT: {
+      why: "The harvest attack needs no conditions beyond the ones the active attack already needs.",
+      ex: "if the oracle fires on any connection, the collector needs no extra condition either."
+    },
+    VC: {
+      why: "Retrospective decryption yields the entire plaintext of the same sessions, so it cannot disclose less than the active attack extracts from them.",
+      ex: "an oracle recovering one cookie over hours cannot beat a capture that decrypts the whole session at once."
+    },
+    SC: {
+      why: "Retrospective decryption discloses a superset of what the active attack extracts, so its subsequent impact cannot be lower.",
+      ex: "if the recovered cookie opens an admin console, the full decryption opens it as well."
+    }
+  };
+
+  var CR_X_WHY = "Not Defined is scored exactly as High here, because CVSS v4.0 maps CR:X to CR:H. Choosing it would record a value the score does not reflect, so state the requirement explicitly. Example: leaving it Not Defined on low-sensitivity telemetry still scores it as though decades of secrecy were required.";
+  var SAFETY_WHY_MS = "Supplemental Safety is set to Negligible, and a Safety-rated subsequent impact contradicts that. Change Safety first. Example: a marketing site assessed as harming nobody physically cannot also have an integrity failure that endangers someone.";
+  var SAFETY_WHY_S = "Modified Subsequent Integrity or Availability is set to Safety, and declaring safety impact Negligible contradicts that. Example: an endpoint fronting a door controller cannot be marked as having no physical consequence.";
+
+  // Deprecation-vector metrics with no counterpart on the harvest vector.
+  var DEP_ONLY = ["E", "CR", "IR", "AR", "MAV", "MAC", "MAT", "MPR", "MUI",
+    "MVC", "MVI", "MVA", "MSC", "MSI", "MSA"];
+
+  var state = {};
+  var loadRepairs = [];
+
+  // ---- CVSS vectors -------------------------------------------------------
+
+  function blankSelection() {
+    var sel = {};
+    Object.keys(ORDER).forEach(function (k) { sel[k] = "X"; });
+    return sel;
+  }
+
+  // Returns a full selection object, or null if the vector is not a valid
+  // CVSS v4.0 vector. Metrics outside `allowed` are dropped.
+  function parseVector(str, allowed) {
+    if (!str) return null;
+    var parts = String(str).trim().split("/");
+    if (parts.shift() !== "CVSS:4.0") return null;
+    var sel = blankSelection();
+    var seen = {};
+    for (var i = 0; i < parts.length; i++) {
+      var kv = parts[i].split(":");
+      var k = kv[0], v = kv[1];
+      if (kv.length !== 2 || !ORDER[k] || ORDER[k].indexOf(v) < 0 || seen[k]) return null;
+      seen[k] = true;
+      if (!allowed || allowed.indexOf(k) >= 0) sel[k] = v;
+    }
+    for (var j = 0; j < BASE.length; j++) {
+      if (!seen[BASE[j]]) return null;
+    }
+    return sel;
+  }
+
+  function vectorString(sel) {
+    var out = "CVSS:4.0";
+    Object.keys(ORDER).forEach(function (k) {
+      if (sel[k] !== "X") out += "/" + k + ":" + sel[k];
+    });
+    return out;
+  }
+
+  function score(sel) {
+    return cvss_score(sel, cvssLookup_global, maxSeverity, macroVector(sel));
+  }
+
+  // ---- HNDL transformation ------------------------------------------------
+
+  function temporal(dl, mt, qt) {
+    var g = dl + mt - qt;
+    var t = g <= 0 ? 0 : (qt > 0 ? Math.min(1, g / qt) : 1);
+    return { g: g, t: t };
+  }
+
+  function round1(x) {
+    return Math.round((x + Number.EPSILON) * 10) / 10;
+  }
+
+  function hndl(sDep, sHarv, t) {
+    return round1(Math.max(sDep, t * sHarv));
+  }
+
+  function band(s) {
+    if (s === 0) return "None";
+    if (s < 4) return "Low";
+    if (s < 7) return "Medium";
+    if (s < 9) return "High";
+    return "Critical";
+  }
+
+  // T is a 0-1 multiplier rather than a score, so it is coloured on the same
+  // five-step scale stretched over that range: T = 0.62 reads as Medium.
+  function bandT(t) {
+    return band(t * 10);
+  }
+
+  function setBand(id, bandName, extra) {
+    document.getElementById(id).className =
+      (extra ? extra + " " : "") + "band-" + bandName.toLowerCase();
+  }
+
+  function fmtYears(n) {
+    return String(Math.round(n * 100) / 100);
+  }
+
+  // ---- Coherence checks ---------------------------------------------------
+
+  function rank(key, value) {
+    return ORDER[key].indexOf(value);
+  }
+
+  // Returns the reason this option may not be selected, or null if it may.
+  function blockReason(which, key, value) {
+    if (which === "harv") {
+      var pin = HARV_PINNED[key];
+      if (pin && value !== pin.value) return pin.why + " Example: " + pin.ex;
+      if (key === "CR" && value === "X") return CR_X_WHY;
+    }
+
+    var rule = HARV_AT_LEAST[key];
+    if (rule) {
+      if (which === "harv" && rank(key, value) > rank(key, state.dep[key])) {
+        return rule.why + " The deprecation vector is set to " + key + ":" + state.dep[key] +
+          ", which this would fall below. Example: " + rule.ex;
+      }
+      if (which === "dep" && rank(key, value) < rank(key, state.harv[key])) {
+        return rule.why + " The harvest vector is set to " + key + ":" + state.harv[key] +
+          ", which this would exceed, so raise the harvest vector first. Example: " + rule.ex;
+      }
+    }
+
+    if (which === "dep") {
+      if ((key === "MSI" || key === "MSA") && value === "S" && state.dep.S === "N") {
+        return SAFETY_WHY_MS;
+      }
+      if (key === "S" && value === "N" && (state.dep.MSI === "S" || state.dep.MSA === "S")) {
+        return SAFETY_WHY_S;
+      }
+    }
+    return null;
+  }
+
+  // Buttons enforce the rules for clicks, but a shared URL can carry a pair
+  // that breaks them. Repair the harvest vector towards the stricter value
+  // and report what changed, so the state behind the blocked buttons is
+  // never itself contradictory.
+  function normalise() {
+    var fixed = [];
+    function set(vec, key, value) {
+      fixed.push(key + ":" + state[vec][key] + " \u2192 " + key + ":" + value);
+      state[vec][key] = value;
+    }
+    Object.keys(HARV_PINNED).forEach(function (k) {
+      if (state.harv[k] !== HARV_PINNED[k].value) set("harv", k, HARV_PINNED[k].value);
+    });
+    if (state.harv.CR === "X") set("harv", "CR", "H");
+    Object.keys(HARV_AT_LEAST).forEach(function (k) {
+      if (rank(k, state.harv[k]) > rank(k, state.dep[k])) set("harv", k, state.dep[k]);
+    });
+    if (state.dep.S === "N" && (state.dep.MSI === "S" || state.dep.MSA === "S")) {
+      set("dep", "S", "X");
+    }
+    return fixed;
+  }
+
+  // Contradictions that are not a single button press, so they are reported
+  // rather than blocked.
+  function coherenceWarnings(sHndl, worst, tmp) {
+    var out = [];
+
+    if (loadRepairs.length) {
+      out.push("The vectors in the link broke a coherence rule and were adjusted: " +
+        loadRepairs.join(", ") + ".");
+    }
+
+    var same = BASE.every(function (k) { return state.dep[k] === state.harv[k]; });
+    if (same) {
+      out.push("The two vectors are now identical, so S_HNDL reduces to S_dep and the harvest model contributes nothing. The panels are meant to describe different attacks on the same endpoint.");
+    }
+
+    if (state.dl === 0 && (state.harv.CR === "H" || state.harv.CR === "M")) {
+      out.push("Confidentiality lifetime is 0 years, but the harvest vector carries CR:" +
+        state.harv.CR + ". Data that need not stay secret cannot also carry a raised confidentiality requirement.");
+    }
+
+    if (state.qt === 0) {
+      out.push("Quantum horizon is 0 years, where T = min(1, G / QT) is undefined. T is taken as 1, i.e. a cryptanalytically relevant quantum computer assumed to exist today.");
+    }
+
+    if (sHndl < worst) {
+      out.push("The recorded figure is " + sHndl.toFixed(1) + " at QT = " + fmtYears(state.qt) +
+        ", but the worst of the sampled horizons is " + worst.toFixed(1) +
+        ". The method says to record the worst case.");
+    }
+
+    var used = DEP_ONLY.filter(function (k) { return state.dep[k] !== "X"; })
+      .map(function (k) { return k + ":" + state.dep[k]; });
+    if (used.length) {
+      out.push("The deprecation vector uses " + used.join(", ") +
+        ". The harvest vector has no equivalent metrics, so S_dep and S_harv are not scored on the same footing.");
+    }
+
+    return out;
+  }
+
+  // ---- Rendering ----------------------------------------------------------
+
+  // Labels are shown without their metric code ("Attack Vector (AV)" reads
+  // "Attack Vector"); the code is carried in the hover text instead, so the
+  // mapping to the vector string is never lost.
+  function stripCode(label) {
+    return String(label).replace(/\s*\([^)]*\)\s*$/, "");
+  }
+
+  function helpEntry(which, key) {
+    return (window.HELP && HELP[which] && HELP[which][key]) || null;
+  }
+
+  function metricHelp(which, key, fallback) {
+    var h = helpEntry(which, key);
+    return key + " \u2014 " + ((h && h.text) || fallback || "");
+  }
+
+  function optionHelp(which, key, value, fallback) {
+    var h = helpEntry(which, key);
+    return key + ":" + value + " \u2014 " + ((h && h.options[value]) || fallback || "");
+  }
+
+  var GROUP_HELP = {
+    "Exploitability Metrics": "How hard the attack is to mount: where the attacker must be, what they must defeat, and what must already be true. Example: a flaw reachable from the internet with no privileges scores highest here.",
+    "Vulnerable System Impact Metrics": "What the attack does to this endpoint itself. Example: recovering the plaintext of its sessions is a confidentiality impact on the vulnerable system.",
+    "Subsequent System Impact Metrics": "What the attack does to other systems as a consequence. Example: a credential recovered from this endpoint that opens an internal admin console.",
+    "Environmental and Threat": "Adjustments for your own deployment and for real-world exploitation. Example: raising the confidentiality requirement where the traffic carries clinical data.",
+    "Supplemental Metrics": "Context recorded alongside the score. None of these metrics enters the calculation, by CVSS v4.0 design. Example: marking a flaw Irrecoverable documents it without changing S_dep.",
+    "Environmental Metrics": "Your deployment's own view, overriding the supplier's base values and weighting the impacts by what the data is worth. Example: an endpoint the supplier calls internet-facing that you expose only on a management VLAN.",
+    "Threat Metrics": "How far real-world exploitation has actually got. Example: lowering Exploit Maturity for a flaw with no published exploit."
+  };
+
+  function el(tag, attrs, text) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (a) { node.setAttribute(a, attrs[a]); });
+    }
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // options: [{label, value, tooltip}]
+  function metricRow(which, key, label, tooltip, options, note) {
+    var row = el("div", { "class": "metric" });
+    row.appendChild(el("div", {
+      "class": "metric-label tip",
+      title: metricHelp(which, key, tooltip)
+    }, stripCode(label) + ":"));
+    var opts = el("div", { "class": "options" });
+    options.forEach(function (o) {
+      var help = optionHelp(which, key, o.value, o.tooltip);
+      var b = el("button", {
+        type: "button",
+        "data-which": which,
+        "data-key": key,
+        "data-value": o.value,
+        "data-tip": help,
+        title: help,
+        "aria-pressed": "false"
+      }, stripCode(o.label));
+      opts.appendChild(b);
+    });
+    row.appendChild(opts);
+    if (note) {
+      var n = el("div", { "class": "note" });
+      n.appendChild(el("b", null, "Guidance: "));
+      n.appendChild(document.createTextNode(note));
+      row.appendChild(n);
+    }
+    return row;
+  }
+
+  function configOptions(metricData) {
+    return Object.keys(metricData.options).map(function (label) {
+      var o = metricData.options[label];
+      return { label: label, value: o.value, tooltip: o.tooltip };
+    }).filter(function (o) {
+      // cvss_config.js contains one malformed entry (an empty option under
+      // MSC). Rendering it would give a valueless button that scores NaN.
+      return o.value && ORDER[metricData.short].indexOf(o.value) >= 0;
+    });
+  }
+
+  // Renders every metric group of one top-level cvssConfig section.
+  function renderConfigSection(container, which, sectionName, notes) {
+    var groups = cvssConfig[sectionName].metric_groups;
+    Object.keys(groups).forEach(function (groupName) {
+      if (groupName) {
+        container.appendChild(el("div",
+          { "class": "group-title tip", title: GROUP_HELP[groupName] || "" }, groupName));
+      }
+      var metrics = groups[groupName];
+      Object.keys(metrics).forEach(function (label) {
+        var m = metrics[label];
+        container.appendChild(metricRow(which, m.short, label, m.tooltip, configOptions(m), notes && notes[m.short]));
+      });
+    });
+  }
+
+  function sectionNote(label, text) {
+    var n = el("div", { "class": "note" });
+    n.appendChild(el("b", null, label + " "));
+    n.appendChild(document.createTextNode(text));
+    return n;
+  }
+
+  function details(title, sections, which, notes, lead) {
+    var d = el("details");
+    d.appendChild(el("summary", { "class": "tip", title: GROUP_HELP[title] || "" }, title));
+    var inner = el("div");
+    if (lead) inner.appendChild(sectionNote("Note:", lead));
+    sections.forEach(function (s) { renderConfigSection(inner, which, s, notes); });
+    d.appendChild(inner);
+    return d;
+  }
+
+  function buildForm() {
+    renderConfigSection(document.getElementById("dep-base"), "dep", "Base Metrics");
+    var extra = document.getElementById("dep-extra");
+    extra.appendChild(details("Supplemental Metrics", ["Supplemental Metrics"], "dep", null, SUPP_NOTE));
+    extra.appendChild(details("Environmental Metrics",
+      ["Environmental (Modified Base Metrics)", "Environmental (Security Requirements)"], "dep"));
+    extra.appendChild(details("Threat Metrics", ["Threat Metrics"], "dep", DEP_NOTES));
+
+    var harv = document.getElementById("harv-base");
+    renderConfigSection(harv, "harv", "Base Metrics", HARV_NOTES);
+
+    harv.appendChild(el("div",
+      { "class": "group-title tip", title: GROUP_HELP["Environmental and Threat"] },
+      "Environmental and Threat"));
+    var cr = cvssConfig["Environmental (Security Requirements)"].metric_groups[""]["Confidentiality Requirements (CR)"];
+    var crOpts = configOptions(cr);
+    var crOrder = ["X", "L", "M", "H"];
+    crOpts.sort(function (a, b) { return crOrder.indexOf(a.value) - crOrder.indexOf(b.value); });
+    harv.appendChild(metricRow("harv", "CR", "Confidentiality Requirements (CR)", cr.tooltip, crOpts));
+
+    var eRow = el("div", { "class": "metric" });
+    eRow.appendChild(el("div", {
+      "class": "metric-label tip",
+      title: metricHelp("dep", "E")
+    }, "Exploit Maturity:"));
+    eRow.appendChild(el("div", { "class": "locked tip", title: E_LOCKED_TIP }, "Not Defined"));
+    var eNote = el("div", { "class": "note" });
+    eNote.appendChild(el("b", null, "Locked: "));
+    eNote.appendChild(document.createTextNode(E_NOTE));
+    eRow.appendChild(eNote);
+    harv.appendChild(eRow);
+
+    var strip = document.getElementById("strip");
+    SENSITIVITY_QT.forEach(function (qt) {
+      strip.appendChild(el("div", { "data-qt": String(qt) }));
+    });
+  }
+
+  // ---- State and URL ------------------------------------------------------
+
+  function resetState() {
+    state.dep = parseVector(DEFAULTS.dep);
+    state.harv = parseVector(DEFAULTS.harv, HARV_ALLOWED);
+    state.dl = DEFAULTS.dl;
+    state.mt = DEFAULTS.mt;
+    state.qt = DEFAULTS.qt;
+  }
+
+  function readYears(v) {
+    var n = parseFloat(v);
+    return isFinite(n) && n >= 0 ? n : null;
+  }
+
+  function hashString() {
+    return "#dep=" + vectorString(state.dep) +
+      "&harv=" + vectorString(state.harv) +
+      "&dl=" + fmtYears(state.dl) +
+      "&mt=" + fmtYears(state.mt) +
+      "&qt=" + fmtYears(state.qt);
+  }
+
+  function readHash() {
+    var h = window.location.hash.replace(/^#/, "");
+    if (!h) return;
+    var params = {};
+    h.split("&").forEach(function (pair) {
+      var i = pair.indexOf("=");
+      if (i > 0) {
+        try { params[pair.slice(0, i)] = decodeURIComponent(pair.slice(i + 1)); } catch (e) { /* ignore */ }
+      }
+    });
+    var dep = parseVector(params.dep);
+    var harv = parseVector(params.harv, HARV_ALLOWED);
+    if (dep) state.dep = dep;
+    if (harv) state.harv = harv;
+    ["dl", "mt", "qt"].forEach(function (k) {
+      var n = readYears(params[k]);
+      if (n !== null) state[k] = n;
+    });
+  }
+
+  function writeHash() {
+    var h = hashString();
+    if (window.location.hash === h) return;
+    try {
+      history.replaceState(null, "", h);
+    } catch (e) {
+      window.location.hash = h;
+    }
+  }
+
+  function syncInputs() {
+    ["dl", "mt", "qt"].forEach(function (k) {
+      var input = document.getElementById(k);
+      input.value = fmtYears(state[k]);
+      input.removeAttribute("aria-invalid");
+    });
+  }
+
+  // ---- Output -------------------------------------------------------------
+
+  function setText(id, text) {
+    document.getElementById(id).textContent = text;
+  }
+
+  function refresh() {
+    var buttons = document.querySelectorAll("button[data-key]");
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      var which = b.getAttribute("data-which");
+      var key = b.getAttribute("data-key");
+      var value = b.getAttribute("data-value");
+      b.setAttribute("aria-pressed", String(state[which][key] === value));
+      // aria-disabled rather than disabled: a disabled button suppresses its
+      // own title tooltip, and the reason is the point of blocking it.
+      var reason = blockReason(which, key, value);
+      if (reason) {
+        b.setAttribute("aria-disabled", "true");
+        b.setAttribute("title", reason);
+        b.className = "blocked";
+      } else {
+        b.removeAttribute("aria-disabled");
+        b.setAttribute("title", b.getAttribute("data-tip") || "");
+        b.className = "";
+      }
+    }
+
+    var sDep = score(state.dep);
+    var sHarv = score(state.harv);
+    var tmp = temporal(state.dl, state.mt, state.qt);
+    var sHndl = hndl(sDep, sHarv, tmp.t);
+    var bandName = band(sHndl);
+
+    // Section C
+    setText("g-out", fmtYears(tmp.g));
+    setText("t-rule", tmp.g <= 0 ? "0 (G ≤ 0)" : "min(1, G / QT)");
+    setText("t-out", tmp.t.toFixed(2));
+    setText("verdict", tmp.g <= 0
+      ? "Mosca's inequality is satisfied — no HNDL exposure"
+      : "Exposure gap: " + fmtYears(tmp.g) + " years");
+
+    var cells = document.querySelectorAll("#strip > div");
+    var results = SENSITIVITY_QT.map(function (qt) {
+      var t = temporal(state.dl, state.mt, qt).t;
+      return { qt: qt, t: t, s: hndl(sDep, sHarv, t) };
+    });
+    var worst = Math.max.apply(null, results.map(function (r) { return r.s; }));
+    results.forEach(function (r, idx) {
+      var c = cells[idx];
+      c.className = "band-" + band(r.s).toLowerCase() + (r.s === worst ? " worst" : "") + " tip";
+      c.setAttribute("title", "S_HNDL recomputed with the quantum horizon held at " + r.qt +
+        " years, keeping the confidentiality lifetime and migration time you entered. Example: at QT = " +
+        r.qt + " the gap G is " + fmtYears(state.dl + state.mt - r.qt) + " years, so T is " +
+        r.t.toFixed(2) + " and the result is " + r.s.toFixed(1) + ".");
+      c.innerHTML = "";
+      c.appendChild(el("div", null, "QT = " + r.qt + " yr"));
+      var line = el("div");
+      line.appendChild(el("span", { "class": "s" }, r.s.toFixed(1)));
+      line.appendChild(document.createTextNode(" " + band(r.s)));
+      c.appendChild(line);
+      c.appendChild(el("div", { "class": "strip-t" }, "T = " + r.t.toFixed(2)));
+      if (r.s === worst) c.appendChild(el("div", { "class": "strip-worst" }, "Worst case"));
+    });
+
+    // Results panel
+    setText("hndl-score", sHndl.toFixed(1));
+    setText("hndl-band", bandName);
+    setBand("headline", bandName, "headline tip");
+    setText("dep-score", sDep.toFixed(1));
+    setText("harv-score", sHarv.toFixed(1));
+    setText("t-score", tmp.t.toFixed(2));
+    setBand("fig-dep", band(sDep), "tip");
+    setBand("fig-harv", band(sHarv), "tip");
+    setBand("fig-t", bandT(tmp.t), "tip");
+    setText("mini-hndl", sHndl.toFixed(1));
+    setText("mini-band", bandName);
+    setText("mini-dep", sDep.toFixed(1));
+    setText("mini-harv", sHarv.toFixed(1));
+    setText("mini-t", tmp.t.toFixed(2));
+    setBand("mini", bandName, "mini");
+
+    var notes = coherenceWarnings(sHndl, worst, tmp);
+    var box = document.getElementById("warnings");
+    box.innerHTML = "";
+    if (notes.length) {
+      box.removeAttribute("hidden");
+      box.appendChild(el("div", { "class": "warn-head" },
+        notes.length === 1 ? "1 coherence note" : notes.length + " coherence notes"));
+      var ul = el("ul");
+      notes.forEach(function (w) { ul.appendChild(el("li", null, w)); });
+      box.appendChild(ul);
+    } else {
+      box.setAttribute("hidden", "");
+    }
+
+    var depVec = vectorString(state.dep);
+    var harvVec = vectorString(state.harv);
+    setText("dep-vector", depVec);
+    setText("harv-vector", harvVec);
+    document.getElementById("dep-link").href = "https://www.first.org/cvss/calculator/4.0#" + depVec;
+    document.getElementById("harv-link").href = "https://www.first.org/cvss/calculator/4.0#" + harvVec;
+    setText("ext-string", "HNDL:1.0/DL:" + fmtYears(state.dl) +
+      "/MT:" + fmtYears(state.mt) +
+      "/QT:" + fmtYears(state.qt) +
+      "/T:" + tmp.t.toFixed(2) +
+      "/SH:" + sHarv.toFixed(1) +
+      "/SA:" + sHndl.toFixed(1));
+
+    writeHash();
+  }
+
+  // ---- Blocked-action feedback --------------------------------------------
+
+  function clearBlockedNote() {
+    var old = document.querySelector(".blocked-note");
+    if (old) old.parentNode.removeChild(old);
+  }
+
+  // Hovering a blocked option already shows the reason as a tooltip; clicking
+  // one states it inline, next to the option, for keyboard and touch users.
+  function showBlocked(button, reason) {
+    var row = button.closest(".metric");
+    if (!row) return;
+    var n = el("div", { "class": "blocked-note", role: "alert" });
+    n.appendChild(el("b", null, "Blocked: "));
+    n.appendChild(document.createTextNode(reason));
+    row.appendChild(n);
+  }
+
+  // ---- Clipboard ----------------------------------------------------------
+
+  function fallbackCopy(text) {
+    var ta = el("textarea", { readonly: "" });
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyText(text, button) {
+    var label = button.textContent;
+    function done(ok) {
+      button.textContent = ok ? "Copied" : "Copy failed";
+      setTimeout(function () { button.textContent = label; }, 1200);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(
+        function () { done(true); },
+        function () { done(fallbackCopy(text)); });
+    } else {
+      done(fallbackCopy(text));
+    }
+  }
+
+  // ---- Wiring -------------------------------------------------------------
+
+  function init() {
+    buildForm();
+    resetState();
+    readHash();
+    loadRepairs = normalise();
+    syncInputs();
+
+    document.querySelector("main").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-key]");
+      if (!b) return;
+      var which = b.getAttribute("data-which");
+      var key = b.getAttribute("data-key");
+      var value = b.getAttribute("data-value");
+      clearBlockedNote();
+      var reason = blockReason(which, key, value);
+      if (reason) {
+        showBlocked(b, reason);
+        return;
+      }
+      loadRepairs = [];
+      state[which][key] = value;
+      refresh();
+    });
+
+    ["dl", "mt", "qt"].forEach(function (k) {
+      var input = document.getElementById(k);
+      input.addEventListener("input", function () {
+        var n = readYears(input.value);
+        if (n === null) {
+          input.setAttribute("aria-invalid", "true");
+          return;
+        }
+        input.removeAttribute("aria-invalid");
+        clearBlockedNote();
+        loadRepairs = [];
+        state[k] = n;
+        refresh();
+      });
+      input.addEventListener("change", syncInputs);
+    });
+
+    document.getElementById("results").addEventListener("click", function (e) {
+      var b = e.target.closest("button.copy");
+      if (!b) return;
+      if (b.id === "copy-record") {
+        copyText([
+          document.getElementById("dep-vector").textContent,
+          document.getElementById("harv-vector").textContent,
+          document.getElementById("ext-string").textContent
+        ].join("\n"), b);
+      } else {
+        copyText(document.getElementById(b.getAttribute("data-copy")).textContent, b);
+      }
+    });
+
+    window.addEventListener("hashchange", function () {
+      resetState();
+      readHash();
+      loadRepairs = normalise();
+      clearBlockedNote();
+      syncInputs();
+      refresh();
+    });
+
+    refresh();
+  }
+
+  init();
+})();
